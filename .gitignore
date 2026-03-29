@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+env/
+.env
+.suture_memory.json
+.suture_workflow.json
+*.egg-info/
+dist/
+build/
