@@ -5,6 +5,7 @@ import os
 import re
 
 from mcp.server.fastmcp import FastMCP
+from suture.config import load_config
 
 logger = logging.getLogger("suture-mcp")
 
@@ -13,51 +14,53 @@ def register_quality_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def lint(path: str = ".") -> str:
-        """Run standard enterprise code quality checks (Black and Flake8) on a given path.
+        """Run configured code quality checks on a given path.
 
         Args:
             path: The file or directory path to lint. Defaults to current directory.
 
         Returns:
-            The output of the linters.
+            The output of the configured linters.
         """
         output = []
+        config = load_config()
+        linters = config.get("linters", [])
 
-        # Run Black
-        try:
-            black_result = subprocess.run(
-                ["black", "--check", path],
-                capture_output=True,
-                text=True,
-            )
-            output.append("=== Black Formatter Check ===")
-            if black_result.returncode == 0:
-                output.append("Black check passed: Code is properly formatted.")
-            else:
-                output.append("Black check failed:")
-                output.append(black_result.stderr.strip() or black_result.stdout.strip())
-        except Exception as e:
-            output.append(f"Failed to run Black: {e}")
+        if not linters:
+            return "No linters configured."
 
-        output.append("")
+        for linter in linters:
+            name = linter.get("name", "Unknown Linter")
+            command = linter.get("command", [])
+            success_message = linter.get("success_message", f"{name} check passed.")
 
-        # Run Flake8
-        try:
-            flake8_result = subprocess.run(
-                ["flake8", path],
-                capture_output=True,
-                text=True,
-            )
-            output.append("=== Flake8 Linter Check ===")
-            if flake8_result.returncode == 0:
-                output.append("Flake8 check passed: No linting errors found.")
-            else:
-                output.append("Flake8 check failed:")
-                output.append(flake8_result.stdout.strip())
-        except Exception as e:
-            output.append(f"Failed to run Flake8: {e}")
+            output.append(f"=== {name} Check ===")
 
-        return "\n".join(output)
+            if not command:
+                output.append(f"Error: No command specified for {name}.")
+                output.append("")
+                continue
+
+            # Format the command with the path
+            formatted_command = [arg.replace("{path}", path) for arg in command]
+
+            try:
+                result = subprocess.run(
+                    formatted_command,
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode == 0:
+                    output.append(success_message)
+                else:
+                    output.append(f"{name} check failed:")
+                    output.append(result.stderr.strip() or result.stdout.strip())
+            except Exception as e:
+                output.append(f"Failed to run {name}: {e}")
+
+            output.append("")
+
+        return "\n".join(output).strip()
 
     @mcp.tool()
     def safety_check(path: str = ".") -> str:
@@ -114,7 +117,7 @@ def register_quality_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def verify_plan(plan_content: str) -> str:
-        """Verify that a markdown plan follows Suture enterprise constraints.
+        """Verify that a markdown plan follows configured Suture phases.
 
         This ensures the plan explicitly contains required phases before work begins.
 
@@ -124,7 +127,8 @@ def register_quality_tools(mcp: FastMCP) -> None:
         Returns:
             A verification report indicating if the plan meets constraints.
         """
-        required_keywords = ["Plan", "Work", "Test", "Git Commit"]
+        config = load_config()
+        required_keywords = config["phases"]
         missing = []
 
         plan_lower = plan_content.lower()
@@ -133,6 +137,6 @@ def register_quality_tools(mcp: FastMCP) -> None:
                 missing.append(kw)
 
         if missing:
-            return f"❌ Plan Verification Failed. The plan is missing required enterprise phases: {', '.join(missing)}.\nPlease update the plan to include these phases."
+            return f"❌ Plan Verification Failed. The plan is missing required configured phases: {', '.join(missing)}.\nPlease update the plan to include these phases."
 
         return "✅ Plan Verification Passed. All required phases are present."

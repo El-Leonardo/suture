@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 import os
 
 from mcp.server.fastmcp import FastMCP
+from suture.config import load_config
 
 logger = logging.getLogger("suture-mcp")
 
@@ -78,7 +79,7 @@ def register_loop_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def finish_loop(final_result: str) -> str:
-        """Finish the currently active automated loop.
+        """Finish the currently active automated loop and save it to history.
 
         Args:
             final_result: The final outcome or result of the loop.
@@ -92,30 +93,46 @@ def register_loop_tools(mcp: FastMCP) -> None:
 
         total_iterations = len(data.get("iterations", []))
         goal = data.get("loop_goal", "Unknown")
+        iterations = data.get("iterations", [])
 
-        # Reset loop state but we could keep history in a long-term log if desired
+        # Save loop to history
+        HISTORY_FILE = Path(os.getcwd()) / ".suture_history.jsonl"
+        history_entry = {
+            "goal": goal,
+            "final_result": final_result,
+            "iterations": iterations
+        }
+
+        try:
+            with open(HISTORY_FILE, "a") as f:
+                f.write(json.dumps(history_entry) + "\n")
+        except Exception as e:
+            logger.error(f"Failed to append to history file {HISTORY_FILE}: {e}")
+
+        # Reset loop state
         data["loop_active"] = False
         data["loop_goal"] = None
         data["iterations"] = []
         _save_workflow(data)
 
-        return f"Loop finished successfully. Goal: '{goal}'. Total iterations: {total_iterations}. Final Result: '{final_result}'."
+        return f"Loop finished successfully. Goal: '{goal}'. Total iterations: {total_iterations}. Final Result: '{final_result}'. History saved to {HISTORY_FILE.name}."
 
     @mcp.tool()
     def set_workflow_phase(phase: str) -> str:
-        """Set the current workflow phase (e.g., Plan, Work, Test, Git Commit).
+        """Set the current workflow phase.
 
-        This is used to strictly enforce the Sutureprogram constraints.
+        This is used to strictly enforce the configured workflow phases.
 
         Args:
-            phase: The name of the phase to enter (e.g., 'Plan', 'Work', 'Test').
+            phase: The name of the phase to enter.
 
         Returns:
             A message confirming the phase change.
         """
-        allowed_phases = ["Plan", "Work", "Test", "Git Commit"]
+        config = load_config()
+        allowed_phases = config["phases"]
         if phase not in allowed_phases:
-            return f"Warning: '{phase}' is not a standard Suture phase. Standard phases are: {', '.join(allowed_phases)}. Phase set anyway."
+            return f"Warning: '{phase}' is not a standard configured phase. Configured phases are: {', '.join(allowed_phases)}. Phase set anyway."
 
         data = _load_workflow()
         data["current_phase"] = phase
