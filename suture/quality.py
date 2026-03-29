@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger("suture-mcp")
 
+
 def register_quality_tools(mcp: FastMCP) -> None:
     """Register quality and safety tools with the FastMCP instance."""
 
@@ -35,7 +36,9 @@ def register_quality_tools(mcp: FastMCP) -> None:
                 output.append("Black check passed: Code is properly formatted.")
             else:
                 output.append("Black check failed:")
-                output.append(black_result.stderr.strip() or black_result.stdout.strip())
+                output.append(
+                    black_result.stderr.strip() or black_result.stdout.strip()
+                )
         except Exception as e:
             output.append(f"Failed to run Black: {e}")
 
@@ -69,12 +72,17 @@ def register_quality_tools(mcp: FastMCP) -> None:
         Returns:
             A report of any potential secrets found.
         """
-        # Basic regex patterns for common secrets
+        # ⚡ Bolt: Pre-compile regex patterns outside the loop for O(1) matching overhead
+        # rather than recompiling them for every file checked.
         patterns = {
-            "AWS Access Key": r"AKIA[0-9A-Z]{16}",
-            "GitHub Token": r"(gh[pousr]_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59})",
-            "Generic API Key": r"(?i)(api[_-]?key|secret[_-]?key|access[_-]?token)[\s:=]+[\"']?[A-Za-z0-9\-_]{16,}[\"']?",
-            "RSA Private Key": r"-----BEGIN RSA PRIVATE KEY-----",
+            "AWS Access Key": re.compile(r"AKIA[0-9A-Z]{16}"),
+            "GitHub Token": re.compile(
+                r"(gh[pousr]_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59})"
+            ),
+            "Generic API Key": re.compile(
+                r"(?i)(api[_-]?key|secret[_-]?key|access[_-]?token)[\s:=]+[\"']?[A-Za-z0-9\-_]{16,}[\"']?"
+            ),
+            "RSA Private Key": re.compile(r"-----BEGIN RSA PRIVATE KEY-----"),
         }
 
         findings = []
@@ -85,10 +93,13 @@ def register_quality_tools(mcp: FastMCP) -> None:
             files_to_check = [target_path]
         else:
             files_to_check = []
-            for root, _, files in os.walk(target_path):
-                # Skip common ignore dirs
-                if any(ignored in root for ignored in [".git", "__pycache__", "venv", "node_modules"]):
-                    continue
+            # ⚡ Bolt: Prune directories in-place during os.walk to prevent unnecessary disk I/O
+            # into large ignored directories (like node_modules or .git).
+            ignored_dirs = {".git", "__pycache__", "venv", "node_modules"}
+            for root, dirs, files in os.walk(target_path):
+                # Modify dirs in-place to prune the walk tree
+                dirs[:] = [d for d in dirs if d not in ignored_dirs]
+
                 for file in files:
                     files_to_check.append(os.path.join(root, file))
 
@@ -97,18 +108,22 @@ def register_quality_tools(mcp: FastMCP) -> None:
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
                     for name, pattern in patterns.items():
-                        matches = re.finditer(pattern, content)
+                        matches = pattern.finditer(content)
                         for match in matches:
                             # Context window
                             start = max(0, match.start() - 20)
                             end = min(len(content), match.end() + 20)
-                            snippet = content[start:end].replace('\n', ' ')
-                            findings.append(f"[{name}] found in {os.path.relpath(file_path, start=target_path)}: ...{snippet}...")
+                            snippet = content[start:end].replace("\n", " ")
+                            findings.append(
+                                f"[{name}] found in {os.path.relpath(file_path, start=target_path)}: ...{snippet}..."
+                            )
             except Exception as e:
                 logger.debug(f"Could not read {file_path} for safety check: {e}")
 
         if findings:
-            return "⚠️ SAFETY CHECK FAILED: Potential secrets found!\n\n" + "\n".join(findings)
+            return "⚠️ SAFETY CHECK FAILED: Potential secrets found!\n\n" + "\n".join(
+                findings
+            )
 
         return "✅ Safety check passed. No obvious secrets detected."
 
@@ -124,13 +139,19 @@ def register_quality_tools(mcp: FastMCP) -> None:
         Returns:
             A verification report indicating if the plan meets constraints.
         """
-        required_keywords = ["Plan", "Work", "Test", "Git Commit"]
+        # ⚡ Bolt: Pre-lower case required keywords to avoid doing it inside the loop
+        required_keywords_lower = {
+            "plan": "Plan",
+            "work": "Work",
+            "test": "Test",
+            "git commit": "Git Commit",
+        }
         missing = []
 
         plan_lower = plan_content.lower()
-        for kw in required_keywords:
-            if kw.lower() not in plan_lower:
-                missing.append(kw)
+        for kw_lower, kw_original in required_keywords_lower.items():
+            if kw_lower not in plan_lower:
+                missing.append(kw_original)
 
         if missing:
             return f"❌ Plan Verification Failed. The plan is missing required enterprise phases: {', '.join(missing)}.\nPlease update the plan to include these phases."
