@@ -16,6 +16,14 @@ It is designed as an orchestration wrapper and Model Context Protocol (MCP) serv
 - **Memory Framework**: Out-of-the-box support for `store_memory` and `retrieve_memory` to prevent AI agent hallucinations across long coding sessions or automated loops.
 - **Loop Orchestration**: Built-in functions like `start_loop`, `record_loop_iteration`, and `finish_loop` to enable reliable and transparent autonomous agent workflows.
 
+## File Overview
+
+- **`suture/server.py`**: The main entry point for the Suture MCP server. It initializes the server and provides tools for persistent memory storage (`store_memory`, `retrieve_memory`).
+- **`suture/loops.py`**: Contains tools for orchestrating automated agent loops and tracking workflow phases (e.g., `start_loop`, `record_loop_iteration`, `finish_loop`).
+- **`suture/quality.py`**: Provides code quality tools like linting (`black`, `flake8`), safety checks (secret scanning), and plan verification (`verify_plan`).
+- **`Sutureprogram.template.md`**: A template file to be copied as `Sutureprogram.md`, acting as a prompt and constraint guide that instructs agents on how to execute their workflows.
+- **`pyproject.toml`**: The project configuration file defining dependencies, build systems, and the CLI entry point (`suture-mcp`).
+
 ## Installation
 
 ```bash
